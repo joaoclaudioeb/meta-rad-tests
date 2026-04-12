@@ -1,0 +1,341 @@
+// SPDX-License-Identifier: GPL-2.0
+/* TI ADS1256 - Very Low Noise, 24-Bit Analog-to-Digital Converter
+ * Copyright (C) 2025 Texas Instruments Incorporated - https://www.ti.com/
+ */
+
+#include <linux/err.h>
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/mod_devicetable.h>
+#include <linux/slab.h>
+#include <linux/sysfs.h>
+
+#include <linux/gpio/consumer.h>
+#include <linux/spi/spi.h>
+
+#include <linux/iio/iio.h>
+#include <linux/iio/buffer.h>
+#include <linux/iio/trigger_consumer.h>
+#include <linux/iio/triggered_buffer.h>
+#include <linux/iio/sysfs.h>
+
+#include <asm/unaligned.h>
+
+/* Commands */
+#define ADS1256_CMD_NOP           0x00
+#define ADS1256_CMD_WAKEUP        0xFF
+#define ADS1256_CMD_RDATA         0x01
+#define ADS1256_CMD_RDATAC        0x03
+#define ADS1256_CMD_SDATAC        0x0F
+#define ADS1256_CMD_RREG          0x10
+#define ADS1256_CMD_WREG          0x50
+#define ADS1256_CMD_SELFCAL       0xF0
+#define ADS1256_CMD_SELFOCAL      0xF1
+#define ADS1256_CMD_SELFGCAL      0xF2
+#define ADS1256_CMD_SYSOCAL       0xF3
+#define ADS1256_CMD_SYSGCAL       0xF4
+#define ADS1256_CMD_SYNC          0xFC
+#define ADS1256_CMD_STANDBY       0xFD
+#define ADS1256_CMD_RESET         0xFE
+
+/* Registers */
+#define ADS1256_REG_STATUS        0x00
+#define ADS1256_REG_MUX           0x01
+#define ADS1256_REG_ADCON         0x02
+#define ADS1256_REG_DRATE         0x03
+#define ADS1256_REG_IO            0x04
+#define ADS1256_REG_OFC0          0x05
+#define ADS1256_REG_OFC1          0x06
+#define ADS1256_REG_OFC2          0x07
+#define ADS1256_REG_FSC0          0x08
+#define ADS1256_REG_FSC1          0x09
+#define ADS1256_REG_FSC2          0x0A
+
+#define ADS1256_MAX_CHANNELS      8
+
+enum ads1256_bitorder {
+    ADS1256_BITORDER_MSB          = 0,
+    ADS1256_BITORDER_LSB          = 1
+};
+
+enum ads1256_acal {
+    ADS1256_ACAL_DISABLED         = 0,
+    ADS1256_ACAL_ENABLED          = 1
+};
+
+enum ads1256_buffer {
+    ADS1256_BUFFER_DISABLED       = 0,
+    ADS1256_BUFFER_ENABLED        = 1
+};
+
+/* ADS1256 channels */
+enum ads1256_mux {
+    ADS1256_MUX_DIFF_0_1          = 0x01,
+    ADS1256_MUX_DIFF_2_3          = 0x23,
+    ADS1256_MUX_DIFF_4_5          = 0x45,
+    ADS1256_MUX_DIFF_6_7          = 0x67,
+    ADS1256_MUX_SING_0            = 0x0F,
+    ADS1256_MUX_SING_1            = 0x1F,
+    ADS1256_MUX_SING_2            = 0x2F,
+    ADS1256_MUX_SING_3            = 0x3F,
+    ADS1256_MUX_SING_4            = 0x4F,
+    ADS1256_MUX_SING_5            = 0x5F,
+    ADS1256_MUX_SING_6            = 0x6F,
+    ADS1256_MUX_SING_7            = 0x7F,
+};
+
+/* ADS1256 PGA */
+enum ads1256_pga {
+    ADS1256_PGA_1                 = 0x00,
+    ADS1256_PGA_2                 = 0x01,
+    ADS1256_PGA_4                 = 0x02,
+    ADS1256_PGA_8                 = 0x03,
+    ADS1256_PGA_16                = 0x04,
+    ADS1256_PGA_32                = 0x05,
+    ADS1256_PGA_64                = 0x06,
+};
+
+/* ADS1256 SPS */
+enum ads1256_drate {
+    ADS1256_DRATE_30000SPS        = 0xF0,
+    ADS1256_DRATE_15000SPS        = 0xE0,
+    ADS1256_DRATE_7500SPS         = 0xD0,
+    ADS1256_DRATE_3750SPS         = 0xC0,
+    ADS1256_DRATE_2000SPS         = 0xB0,
+    ADS1256_DRATE_1000SPS         = 0xA1,
+    ADS1256_DRATE_500SPS          = 0x92,
+    ADS1256_DRATE_100SPS          = 0x82,
+    ADS1256_DRATE_60SPS           = 0x72,
+    ADS1256_DRATE_50SPS           = 0x63,
+    ADS1256_DRATE_30SPS           = 0x53,
+    ADS1256_DRATE_25SPS           = 0x43,
+    ADS1256_DRATE_15SPS           = 0x33,
+    ADS1256_DRATE_10SPS           = 0x23,
+    ADS1256_DRATE_5SPS            = 0x13,
+    ADS1256_DRATE_2SPS            = 0x03,
+};
+
+struct ads1256_private {
+    struct spi_device *spi;
+
+    struct gpio_desc *drdy_gpio;
+    struct gpio_desc *reset_gpio;
+    struct gpio_desc *sync_gpio; /* Optional */
+
+    struct mutex lock;
+
+    /* Cached regs. values */
+    u8 status_reg;
+    u8 mux_reg;
+    u8 adcon_reg;
+    u8 drate_reg;
+    u8 gpio_reg;
+
+    /* Ref. voltage in millivolts */
+    u32 vref_mv;
+
+    u32 buffer[ADS1256_MAX_CHANNELS + sizeof(s64)/sizeof(u32)] __aligned(8);
+    u8 data[6] __aligned(IIO_DMA_MINALIGN);
+};
+
+#define ADS1256_CHAN(index) {                                   \
+        .type = IIO_VOLTAGE,                                    \
+            .indexed = 1,                                       \
+            .channel = index,                                   \
+            .info_mask_separate = BIT(IIO_CHAN_INFO_RAW),       \
+            .scan_index = index,                                \
+            .scan_type = {                                      \
+                .sign = 's',                                    \
+                .realbits = 24,                                 \
+                .storagebits = 32,                              \
+            },                                                  \
+            }
+
+static const struct iio_chan_spec ads1256_channels[] = {
+    ADS1256_CHAN(0),
+    ADS1256_CHAN(1),
+    ADS1256_CHAN(2),
+    ADS1256_CHAN(3),
+    ADS1256_CHAN(4),
+    ADS1256_CHAN(5),
+    ADS1256_CHAN(6),
+    ADS1256_CHAN(7),
+};
+
+static int ads1256_wait_drdy(struct ads1256_private *priv)
+{
+    int timeout = 1000;
+
+    while (gpiod_get_value(priv->drdy_gpio)) {
+        if (--timeout == 0)
+            return -ETIMEDOUT;
+
+        udelay(10);
+    }
+
+    return 0;
+}
+
+static int ads1256_write_cmd(struct iio_dev *indio_dev, u8 cmd)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    ret = ads1256_wait_drdy(priv);
+    if (ret)
+        return ret;
+
+    priv->data[0] = cmd;
+
+    ret = spi_write(priv->spi, &priv->data[0], 1);
+    if (ret < 0)
+        return ret;
+
+    udelay(7); /* t6 delay (~6.5 us) */
+
+    return 0;
+}
+
+static int ads1256_reset(struct iio_dev *indio_dev)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+
+    if (priv->reset_gpio) {
+        gpiod_set_value(priv->reset_gpio, 0);
+        mdelay(200);
+        gpiod_set_value(priv->reset_gpio, 1);
+        mdelay(200);
+    } else {
+        return ads1256_write_cmd(indio_dev, ADS1256_CMD_RESET);
+    }
+
+    return 0;
+}
+
+static int ads1256_write_reg(struct iio_dev *indio_dev, u8 reg, u8 data)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    ret = ads1256_wait_drdy(priv);
+    if (ret)
+        return ret;
+        
+    priv->data[0] = ADS1256_CMD_WREG | reg;
+    priv->data[1] = 0x0;
+    priv->data[2] = data;
+
+    ret = spi_write(priv->spi, &priv->data[0], 3);
+    if (ret < 0)
+        return ret;
+
+    udelay(7); /* t6 delay (~6.5 us) */
+    
+    return 0;
+}
+
+static int ads1256_read(struct iio_dev *indio_dev)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+    int32_t val;
+
+    /* Defines one SPI message composed of two transfers */
+    struct spi_transfer t[4] = {
+        {
+            .tx_buf = &priv->data[0],
+            .len = 1,
+            .delay_usecs = 4,
+        },
+        {
+            .tx_buf = &priv->data[1],
+            .len = 1,
+            .delay_usecs = 4,
+        },
+        {
+            .tx_buf = &priv->data[2],
+            .len = 1,
+            .delay_usecs = 7, /* t6 delay (~6.5 us) */
+        },
+        {
+            .tx_buf = &priv->data[3],
+            .rx_buf = &priv->data[3],
+            .len = 3,
+        },
+    };
+
+    ret = ads1256_wait_drdy(priv);
+    if (ret)
+        return ret;
+
+    priv->data[0] = ADS1256_CMD_SYNC;
+    priv->data[1] = ADS1256_CMD_WAKEUP;
+    priv->data[2] = ADS1256_CMD_RDATA;
+    memset(&priv->data[3], ADS1256_CMD_NOP, 3);
+    
+    ret = spi_sync_transfer(priv->spi, t, ARRAY_SIZE(t));
+    if (ret < 0)
+        return ret;
+
+    /* Sign not extended */
+    val = ((int32_t)priv->data[3] << 16) |
+        ((int32_t)priv->data[4] << 8) |
+        (int32_t)priv->data[5];
+
+    return val;
+}
+
+static int ads1256_read_raw(struct iio_dev *indio_dev,
+			    struct iio_chan_spec const *chan,
+			    int *val, int *val2, long mask)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    mutex_lock(&priv->lock);
+    
+    switch (mask) {
+    case IIO_CHAN_INFO_RAW:
+        ret = ads1256_write_reg(indio_dev, ADS1256_REG_MUX, chan->channel);
+        if (ret)
+            goto out;
+
+        ret = ads1256_read(indio_dev);
+        if (ret < 0)
+            goto out;
+
+        *val = ret;
+
+        ret = IIO_VAL_INT;
+        break;
+    default:
+        ret = -EINVAL;
+        break;
+    }
+ out:
+    mutex_unlock(&priv->lock);
+    return ret;
+}
+
+static const struct iio_info ads1256_info = {
+    .read_raw = &ads1256_read_raw,
+};
+
+/**
+ * TODO:
+ * Add probe() and SPI driver registration (spi_driver struct)
+ * Request and configure GPIOs (DRDY, RESET, optional SYNC)
+ * Initialize device registers (STATUS, ADCON, DRATE, etc.)
+ * Add scale support (IIO_CHAN_INFO_SCALE) based on vref and PGA
+ * Handle proper sign extension of 24-bit data
+ * Add error handling/logging (dev_err/dev_dbg)
+ * The code was based on the ti-ads124s08.c, and the driver I made fo the Raspberry Pi Pico, from my (João) GitHub
+ */
+
+MODULE_AUTHOR("Carlos A. Porto <caftrabalho@gmail.com>");
+MODULE_AUTHOR("João C. E. Barcellos <joaoclaudiobarcellos@gmail.com>");
+MODULE_DESCRIPTION("TI TI_ADS1256 ADC");
+MODULE_LICENSE("GPL v2");
+
