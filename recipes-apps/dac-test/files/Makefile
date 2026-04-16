@@ -8,7 +8,7 @@ all: build
 build: $(APP)
 
 $(APP): $(APP_OBJS)
-	$(CC) -o $@ $(APP_OBJS) $(LDFLAGS) $(LDLIBS)
+	$(CC) -o $@ $(APP_OBJS) $(LDFLAGS) $(LDLIBS) -lgpiod
 clean:
 	rm -f $(APP) *.o
 
