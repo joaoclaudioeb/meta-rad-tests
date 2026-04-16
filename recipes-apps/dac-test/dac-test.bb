@@ -11,6 +11,8 @@ SRC_URI = "file://dac-test.c \
 
 S = "${WORKDIR}"
 
+DEPENDS = "libgpiod"
+
 do_compile() {
 	     oe_runmake
 }
