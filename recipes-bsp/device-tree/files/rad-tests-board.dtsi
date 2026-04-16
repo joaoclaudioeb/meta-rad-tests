@@ -45,6 +45,11 @@
 };
 
 &axi_iic_0 {
+    status = "okay";
+	clock-frequency = <100000>;
+    #address-cells = <1>;
+    #size-cells = <0>;
+
     htu21@40 {
         compatible = "meas,htu21";
         reg = <0x40>;
