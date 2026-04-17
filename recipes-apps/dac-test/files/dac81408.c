@@ -9,6 +9,7 @@
  */
 
 #include "dac81408.h"
+#include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -80,9 +81,36 @@ void dac81408_write_register(dac81408_t *dev, uint8_t reg, uint16_t wdata) {
   uint8_t msb = (wdata >> 8) & 0xFF;
   uint8_t lsb = wdata & 0xFF;
 
-  dac_spi_write(dev, &cmd, 1);
-  dac_spi_write(dev, &msb, 1);
-  dac_spi_write(dev, &lsb, 1);
+  struct spi_txn txn;
+  uint8_t idx = 0;
+
+  spi_txn_prepare(&txn, 3);
+
+  spi_txn_bind_write(&txn, idx, &cmd, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &msb, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &lsb, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  int fd = spi_txn_open(dev->spidev_path);
+  if (fd < 0) {
+    perror("failed to open spidev path!");
+    return;
+  }
+
+  if (spi_txn_execute(&txn, fd) < 0) {
+    fprintf(stderr, "Failed to execute transfer!");
+    return;
+  }
+
+  spi_txn_close(fd);
+
   _dac81408_tcsh_delay();
 }
 
@@ -90,17 +118,69 @@ uint16_t dac81408_read_register(dac81408_t *dev, uint8_t reg) {
   uint8_t cmd = (DAC81408_RREG << 7) | (reg & 0x3F);
   uint8_t dummy = 0x00;
 
-  dac_spi_write(dev, &cmd, 1);
-  dac_spi_write(dev, &dummy, 1);
-  dac_spi_write(dev, &dummy, 1);
-  _dac81408_tcsh_delay();
+  struct spi_txn txn;
+  uint8_t idx = 0;
+
+  spi_txn_prepare(&txn, 3);
+
+  spi_txn_bind_write(&txn, idx, &cmd, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &dummy, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &dummy, 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  int fd = spi_txn_open(dev->spidev_path);
+  if (fd < 0) {
+    perror("failed to open spidev path!");
+    exit(1);
+  }
+
+  if (spi_txn_execute(&txn, fd) < 0) {
+    fprintf(stderr, "Failed to execute transfer!");
+    exit(1);
+  }
+
+  spi_txn_close(fd);
 
   _dac81408_tcsh_delay();
+
+  spi_txn_reset(&txn);
+
+  idx = 0;
 
   uint8_t buf[3];
-  dac_spi_read(dev, &buf[0], 1);
-  dac_spi_read(dev, &buf[1], 1);
-  dac_spi_read(dev, &buf[2], 1);
+
+  spi_txn_bind_write(&txn, idx, &buf[0], 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &buf[1], 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  spi_txn_bind_write(&txn, idx, &buf[2], 1);
+  spi_txn_set_speed(&txn, idx, 1000000);
+  ++idx;
+
+  fd = spi_txn_open(dev->spidev_path);
+  if (fd < 0) {
+    perror("failed to open spidev path!");
+    exit(1);
+  }
+
+  if (spi_txn_execute(&txn, fd) < 0) {
+    fprintf(stderr, "Failed to execute transfer!");
+    exit(1);
+  }
+
+  spi_txn_close(fd);
+
   _dac81408_tcsh_delay();
 
   return ((buf[1] << 8) | buf[2]);

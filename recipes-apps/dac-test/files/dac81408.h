@@ -11,14 +11,20 @@
 #ifndef DAC81408_H_
 #define DAC81408_H_
 
+#include <cstdint>
+#include <cstdlib>
+#include <errno.h>
 #include <fcntl.h>
-#include <gpiod.h>
 #include <linux/spi/spidev.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+
+#include <gpiod.h>
 
 #define DAC81408_REG_NOP 0x00
 #define DAC81408_REG_DEVICEID 0x01
@@ -223,16 +229,149 @@ static inline int dac_spi_transfer(dac81408_t *config, uint8_t *wdata,
 
 static inline int dac_spi_write(dac81408_t *config, uint8_t *data,
                                 uint16_t len) {
-  uint8_t rbuf[230] = {0};
+  uint8_t rbuf[255] = {0};
 
   return dac_spi_transfer(config, data, rbuf, len);
 }
 
 static inline int dac_spi_read(dac81408_t *config, uint8_t *data,
                                uint16_t len) {
-  uint8_t wbuf[230] = {0};
+  uint8_t wbuf[255] = {0};
 
   return dac_spi_transfer(config, wbuf, data, len);
+}
+
+#define SPI_TXN_MAX_TRANSFERS 16
+
+struct spi_txn {
+  struct spi_ioc_transfer xfers[SPI_TXN_MAX_TRANSFERS];
+  unsigned int count;
+  unsigned int bound;
+};
+
+static inline int spi_txn_prepare(struct spi_txn *txn, unsigned int count) {
+  if (count == 0 || count > SPI_TXN_MAX_TRANSFERS)
+    return -EINVAL;
+
+  memset(txn, 0, sizeof(*txn));
+  txn->count = count;
+  txn->bound = 0;
+
+  return 0;
+}
+
+static inline int spi_txn_bind_transfer(struct spi_txn *txn, unsigned int index,
+                                        const uint8_t *tx, uint8_t *rx,
+                                        uint32_t len) {
+  if (index >= txn->count || len == 0)
+    return -EINVAL;
+
+  txn->xfers[index].tx_buf = (unsigned long)tx;
+  txn->xfers[index].rx_buf = (unsigned long)rx;
+  txn->xfers[index].len = len;
+  txn->xfers[index].cs_change = 0;
+  txn->bound++;
+
+  return 0;
+}
+
+static inline int spi_txn_bind_write(struct spi_txn *txn, unsigned int index,
+                                     const uint8_t *tx, uint32_t len) {
+  if (index >= txn->count || len == 0)
+    return -EINVAL;
+
+  txn->xfers[index].tx_buf = (unsigned long)tx;
+  txn->xfers[index].rx_buf = (unsigned long)NULL;
+  txn->xfers[index].len = len;
+  txn->xfers[index].cs_change = 0;
+  txn->bound++;
+
+  return 0;
+}
+
+static inline int spi_txn_bind_read(struct spi_txn *txn, unsigned int index,
+                                    uint8_t *rx, uint32_t len) {
+  if (index >= txn->count || len == 0)
+    return -EINVAL;
+
+  txn->xfers[index].tx_buf = (unsigned long)NULL;
+  txn->xfers[index].rx_buf = (unsigned long)rx;
+  txn->xfers[index].len = len;
+  txn->xfers[index].cs_change = 0;
+  txn->bound++;
+
+  return 0;
+}
+
+static inline int spi_txn_set_speed(struct spi_txn *txn, unsigned int index,
+                                    uint32_t speed_hz) {
+  if (index >= txn->count)
+    return -EINVAL;
+
+  txn->xfers[index].speed_hz = speed_hz;
+
+  return 0;
+}
+
+static inline int spi_txn_set_delay(struct spi_txn *txn, unsigned int index,
+                                    uint16_t delay_us) {
+  if (index >= txn->count)
+    return -EINVAL;
+
+  txn->xfers[index].delay_usecs = delay_us;
+
+  return 0;
+}
+
+static inline int spi_txn_set_bits(struct spi_txn *txn, unsigned int index,
+                                   uint8_t bits_per_word) {
+  if (index >= txn->count)
+    return -EINVAL;
+
+  txn->xfers[index].bits_per_word = bits_per_word;
+
+  return 0;
+}
+
+static inline int spi_txn_execute(struct spi_txn *txn, int fd) {
+  int ret;
+
+  if (txn->bound != txn->count)
+    return -EINVAL;
+
+  ret = ioctl(fd, SPI_IOC_MESSAGE(txn->count), txn->xfers);
+  if (ret < 0)
+    return -errno;
+
+  return ret;
+}
+
+static inline void spi_txn_finalize(struct spi_txn *txn) {
+  memset(txn, 0, sizeof(*txn));
+}
+
+static inline void spi_txn_reset(struct spi_txn *txn) {
+  unsigned int count = txn->count;
+
+  memset(txn->xfers, 0, sizeof(txn->xfers[0]) * count);
+  txn->bound = 0;
+}
+
+static inline int spi_txn_open(const char *path) {
+  int fd;
+
+  fd = open(path, O_RDWR);
+  if (fd < 0)
+    return -errno;
+
+  return fd;
+}
+
+static inline int spi_txn_close(int fd) {
+  if (close(fd) < 0)
+    return -errno;
+
+  return 0;
 }
 
 #endif /* DAC81408_H_ */
