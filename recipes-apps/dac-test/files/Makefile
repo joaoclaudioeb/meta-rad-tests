@@ -1,14 +1,20 @@
 APP = dac-test
 
-# Add any other object files to this list below
-APP_OBJS = dac-test.o dac81408.o
+SRC = \
+	src/main.c \
+	src/device-drivers/dac81408.c \
+	src/drivers/gpio_linux.c \
+	src/drivers/spi_linux.c
 
-all: build
+OBJ = $(SRC:.c=.o)
 
-build: $(APP)
+CFLAGS += -Iinclude
+LDLIBS += -lgpiod
 
-$(APP): $(APP_OBJS)
-	$(CC) -o $@ $(APP_OBJS) $(LDFLAGS) $(LDLIBS) -lgpiod
+all: $(APP)
+
+$(APP): $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
+
 clean:
-	rm -f $(APP) *.o
-
+	rm -f $(APP) $(OBJ)

@@ -10,8 +10,8 @@
 #ifndef SPI_LINUX_H_
 #define SPI_LINUX_H_
 
-#include <linux/spi/spidev.h>
 #include <stdint.h>
+#include <linux/spi/spidev.h>
 
 #define SPI_TXN_MAX_TRANSFERS 16
 

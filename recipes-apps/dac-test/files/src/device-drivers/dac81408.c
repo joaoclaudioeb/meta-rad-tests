@@ -8,6 +8,7 @@
  * @date 21/04/2026
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
