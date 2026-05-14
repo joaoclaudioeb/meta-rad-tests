@@ -129,7 +129,9 @@ int spi_txn_open(const char *path) {
     fd = open(path, O_RDWR);
     if (fd < 0)
         return -errno;
-
+    uint8_t mode = SPI_MODE_1;
+    ioctl(fd, SPI_IOC_WR_MODE, &mode);
+    
     return fd;
 }
 
