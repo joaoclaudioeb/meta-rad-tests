@@ -1,3 +1,6 @@
+/dts-v1/;
+/plugin/;
+
 &spi1 {
     spi1_dev0: spidev@0 {
         compatible = "rohm,dh2228fv";
