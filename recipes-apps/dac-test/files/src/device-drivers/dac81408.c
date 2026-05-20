@@ -105,15 +105,12 @@ void dac81408_write_register(dac81408_t *dev, uint8_t reg, uint16_t wdata) {
     spi_txn_prepare(&txn, 3);
 
     spi_txn_bind_write(&txn, idx, &cmd, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_write(&txn, idx, &msb, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_write(&txn, idx, &lsb, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     int fd = spi_txn_open(dev->spidev_path);
@@ -142,15 +139,12 @@ uint16_t dac81408_read_register(dac81408_t *dev, uint8_t reg) {
     spi_txn_prepare(&txn, 3);
 
     spi_txn_bind_write(&txn, idx, &cmd, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_write(&txn, idx, &dummy, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_write(&txn, idx, &dummy, 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     int fd = spi_txn_open(dev->spidev_path);
@@ -175,15 +169,12 @@ uint16_t dac81408_read_register(dac81408_t *dev, uint8_t reg) {
     uint8_t buf[3];
 
     spi_txn_bind_read(&txn, idx, &buf[0], 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_read(&txn, idx, &buf[1], 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     spi_txn_bind_read(&txn, idx, &buf[2], 1);
-    spi_txn_set_speed(&txn, idx, 1000000);
     ++idx;
 
     fd = spi_txn_open(dev->spidev_path);
