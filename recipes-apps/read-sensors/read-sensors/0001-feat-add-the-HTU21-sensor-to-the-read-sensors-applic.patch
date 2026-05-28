@@ -1,0 +1,383 @@
+From 3f102da0b9ec89db28eb69ed1cda65e299d95645 Mon Sep 17 00:00:00 2001
+From: joaoclaudioeb <joaoclaudiobarcellos@gmail.com>
+Date: Sun, 24 May 2026 01:15:22 +0000
+Subject: [PATCH] feat: add the HTU21 sensor to the read-sensors application
+
+---
+ include/read-sensors/htu21.hpp          | 31 ++++++++++
+ include/read-sensors/ina219.hpp         |  6 +-
+ include/read-sensors/ltc2983.hpp        |  6 +-
+ include/read-sensors/sensor-manager.hpp | 18 ++++++
+ include/read-sensors/sensor.hpp         |  0
+ include/read-sensors/tmp112.hpp         |  4 +-
+ include/read-sensors/xadc.hpp           |  6 +-
+ src/db.cpp                              |  6 +-
+ src/htu21.cpp                           | 76 +++++++++++++++++++++++++
+ src/ina219.cpp                          |  2 +-
+ src/ltc2983.cpp                         |  2 +-
+ src/main.cpp                            |  0
+ src/meson.build                         |  1 +
+ src/sensor-manager.cpp                  |  6 ++
+ src/tmp112.cpp                          |  2 +-
+ 15 files changed, 148 insertions(+), 18 deletions(-)
+ create mode 100644 include/read-sensors/htu21.hpp
+ mode change 100755 => 100644 include/read-sensors/sensor-manager.hpp
+ mode change 100755 => 100644 include/read-sensors/sensor.hpp
+ create mode 100644 src/htu21.cpp
+ mode change 100755 => 100644 src/main.cpp
+ mode change 100755 => 100644 src/sensor-manager.cpp
+
+diff --git a/include/read-sensors/htu21.hpp b/include/read-sensors/htu21.hpp
+new file mode 100644
+index 0000000..baf1645
+--- /dev/null
++++ b/include/read-sensors/htu21.hpp
+@@ -0,0 +1,31 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef HTU21_HPP_
++#define HTU21_HPP_
++
++#include <fsatutils/iio/channel.hpp>
++#include <fsatutils/iio/context.hpp>
++#include <fsatutils/iio/device.hpp>
++#include <memory>
++#include <read-sensors/sensor.hpp>
++#include <string>
++
++namespace sensor {
++
++class Htu21 : public Sensor {
++ public:
++  Htu21(std::shared_ptr<fsatutils::iio::Context> ctx, std::string name);
++  std::optional<std::vector<SensorDataEntry>> read() override;
++
++ private:
++  std::optional<sensor::SensorDataEntry> get_temperature() const;
++  std::optional<sensor::SensorDataEntry> get_humidity() const;
++
++  std::unique_ptr<fsatutils::iio::Device> dev_;
++  std::unique_ptr<fsatutils::iio::Channel> hum_;
++  std::unique_ptr<fsatutils::iio::Channel> temp_;
++};
++
++}  // namespace sensor
++
++#endif
+diff --git a/include/read-sensors/ina219.hpp b/include/read-sensors/ina219.hpp
+index 4ee41e0..84e741e 100644
+--- a/include/read-sensors/ina219.hpp
++++ b/include/read-sensors/ina219.hpp
+@@ -3,12 +3,12 @@
+ #ifndef INA219_HPP_
+ #define INA219_HPP_
+ 
++#include <fsatutils/iio/channel.hpp>
++#include <fsatutils/iio/context.hpp>
++#include <fsatutils/iio/device.hpp>
+ #include <memory>
+ #include <read-sensors/sensor.hpp>
+ #include <string>
+-#include <fsatutils/iio/context.hpp>
+-#include <fsatutils/iio/device.hpp>
+-#include <fsatutils/iio/channel.hpp>
+ 
+ namespace sensor {
+ 
+diff --git a/include/read-sensors/ltc2983.hpp b/include/read-sensors/ltc2983.hpp
+index caaa037..0ac2563 100644
+--- a/include/read-sensors/ltc2983.hpp
++++ b/include/read-sensors/ltc2983.hpp
+@@ -1,12 +1,12 @@
+ #ifndef LTC2983_HPP_
+ #define LTC2983_HPP_
+ 
+-#include <memory>
+-#include <read-sensors/sensor.hpp>
+-#include <string>
+ #include <fsatutils/iio/channel.hpp>
+ #include <fsatutils/iio/context.hpp>
+ #include <fsatutils/iio/device.hpp>
++#include <memory>
++#include <read-sensors/sensor.hpp>
++#include <string>
+ 
+ namespace sensor {
+ 
+diff --git a/include/read-sensors/sensor-manager.hpp b/include/read-sensors/sensor-manager.hpp
+old mode 100755
+new mode 100644
+index dae8941..73d1fda
+--- a/include/read-sensors/sensor-manager.hpp
++++ b/include/read-sensors/sensor-manager.hpp
+@@ -17,6 +17,9 @@
+ #include <read-sensors/sensor.hpp>
+ #include <read-sensors/tmp112.hpp>
+ #include <read-sensors/xadc.hpp>
++// -- Additional sensors --
++#include <read-sensors/htu21.hpp>
++// --
+ #include <string>
+ #include <vector>
+ 
+@@ -96,6 +99,21 @@ class SensorManager : fsatutils::ArgpModule<SensorManager> {
+               return nullptr;
+             }
+           });
++
++      // -- Additional sensors --
++      registerCreator(
++          "htu21",
++          [this](std::string const& sensorName, std::string const& sensorType)
++              -> std::shared_ptr<sensor::Sensor> {
++            try {
++              return std::make_shared<sensor::Htu21>(ctx_, sensorName);
++            } catch (std::runtime_error const& e) {
++              logs::log(ERR, "Failed to create sensor [%s] of type [%s]| %s\n",
++                        sensorName.c_str(), sensorType.c_str(), e.what());
++              return nullptr;
++            }
++          });
++      // --
+     }
+     void registerCreator(const std::string& sensorType,
+                          CreateFunction creator) {
+diff --git a/include/read-sensors/sensor.hpp b/include/read-sensors/sensor.hpp
+old mode 100755
+new mode 100644
+diff --git a/include/read-sensors/tmp112.hpp b/include/read-sensors/tmp112.hpp
+index f438132..1221eba 100644
+--- a/include/read-sensors/tmp112.hpp
++++ b/include/read-sensors/tmp112.hpp
+@@ -5,11 +5,11 @@
+ 
+ #include <memory.h>
+ 
+-#include <read-sensors/sensor.hpp>
+-#include <string>
+ #include <fsatutils/iio/channel.hpp>
+ #include <fsatutils/iio/context.hpp>
+ #include <fsatutils/iio/device.hpp>
++#include <read-sensors/sensor.hpp>
++#include <string>
+ 
+ namespace sensor {
+ 
+diff --git a/include/read-sensors/xadc.hpp b/include/read-sensors/xadc.hpp
+index f7a6378..c3cd658 100644
+--- a/include/read-sensors/xadc.hpp
++++ b/include/read-sensors/xadc.hpp
+@@ -1,12 +1,12 @@
+ #ifndef XADC_HPP_
+ #define XADC_HPP_
+ 
+-#include <memory>
+-#include <read-sensors/sensor.hpp>
+-#include <string>
+ #include <fsatutils/iio/channel.hpp>
+ #include <fsatutils/iio/context.hpp>
+ #include <fsatutils/iio/device.hpp>
++#include <memory>
++#include <read-sensors/sensor.hpp>
++#include <string>
+ 
+ namespace sensor {
+ 
+diff --git a/src/db.cpp b/src/db.cpp
+index 0cda50b..b6445c5 100644
+--- a/src/db.cpp
++++ b/src/db.cpp
+@@ -151,8 +151,7 @@ int SqliteDb::createRegisteredSensorsTable(void) {
+     return -1;
+   }
+ 
+-  logs::log(INFO,
+-            "registered table was created (if it didn't exist)!\n");
++  logs::log(INFO, "registered table was created (if it didn't exist)!\n");
+   return 0;
+ }
+ 
+@@ -234,8 +233,7 @@ SqliteDb::getRegisteredSensors() {
+   std::vector<std::pair<std::string, std::string>> out;
+   if (!dbOpen_) return out;
+ 
+-  const char* stmtStr =
+-      "SELECT sensorName, sensorType FROM registered;";
++  const char* stmtStr = "SELECT sensorName, sensorType FROM registered;";
+   sqlite3_stmt* stmt = nullptr;
+   if (sqlite3_prepare_v2(dbHandle_, stmtStr, -1, &stmt, nullptr) != SQLITE_OK) {
+     logs::log(ERR, "Failed to prepare getRegisteredSensors: %s\n",
+diff --git a/src/htu21.cpp b/src/htu21.cpp
+new file mode 100644
+index 0000000..88d7174
+--- /dev/null
++++ b/src/htu21.cpp
+@@ -0,0 +1,76 @@
++#include <iio.h>
++
++#include <fsatutils/log/log.hpp>
++#include <memory>
++#include <read-sensors/htu21.hpp>
++#include <read-sensors/sensor.hpp>
++#include <stdexcept>
++#include <string>
++
++namespace sensor {
++
++Htu21::Htu21(std::shared_ptr<fsatutils::iio::Context> ctx, std::string name) {
++  supported_types_ = {"humidity", "temperature"};
++  name_ = name;
++  channel_based_ = false;
++
++  dev_ = std::make_unique<fsatutils::iio::Device>(ctx, name);
++  hum_ = std::make_unique<fsatutils::iio::Channel>("humidityrelative0", *dev_,
++                                                   false);
++  temp_ = std::make_unique<fsatutils::iio::Channel>("temp0", *dev_, false);
++}
++
++std::optional<std::vector<SensorDataEntry>> Htu21::read() {
++  std::vector<SensorDataEntry> readings;
++
++  auto entry = this->get_temperature();
++  if (entry) readings.push_back(*entry);
++
++  entry = this->get_humidity();
++  if (entry) readings.push_back(*entry);
++
++  if (readings.empty()) return std::nullopt;
++  return readings;
++}
++
++std::optional<sensor::SensorDataEntry> Htu21::get_temperature() const {
++  long long raw_value;
++
++  try {
++    raw_value = temp_->read_attr<long long>("input");
++  } catch (std::runtime_error const& e) {
++    logs::log(ERR, "Failed to read temperature input attr!\n");
++    return std::nullopt;
++  }
++
++  double temperature = static_cast<double>(raw_value) / 1000.0;
++
++  return sensor::SensorDataEntry{
++      .sensorName = name_,
++      .sensorType = "htu21",
++      .measurementType = "temperature",
++      .value = temperature,
++  };
++}
++
++std::optional<sensor::SensorDataEntry> Htu21::get_humidity() const {
++  long long raw_value;
++
++  try {
++    raw_value = hum_->read_attr<long long>("input");
++  } catch (std::runtime_error const& e) {
++    logs::log(ERR, "Failed to read humidity input attr!\n");
++    return std::nullopt;
++  }
++
++  double humidity = static_cast<double>(raw_value) / 1000.0;
++
++  return sensor::SensorDataEntry{
++      .sensorName = name_,
++      .sensorType = "htu21",
++      .measurementType = "humidity",
++      .value = humidity,
++  };
++}
++
++}  // namespace sensor
+diff --git a/src/ina219.cpp b/src/ina219.cpp
+index 589b6f4..0291cff 100644
+--- a/src/ina219.cpp
++++ b/src/ina219.cpp
+@@ -1,11 +1,11 @@
+ #include <iio.h>
+ 
++#include <fsatutils/log/log.hpp>
+ #include <memory>
+ #include <optional>
+ #include <read-sensors/ina219.hpp>
+ #include <read-sensors/sensor.hpp>
+ #include <stdexcept>
+-#include <fsatutils/log/log.hpp>
+ #include <vector>
+ 
+ namespace sensor {
+diff --git a/src/ltc2983.cpp b/src/ltc2983.cpp
+index 3d86318..ec0a98f 100644
+--- a/src/ltc2983.cpp
++++ b/src/ltc2983.cpp
+@@ -1,11 +1,11 @@
+ #include <iio.h>
+ 
++#include <fsatutils/log/log.hpp>
+ #include <memory>
+ #include <optional>
+ #include <ranges>
+ #include <read-sensors/ltc2983.hpp>
+ #include <read-sensors/sensor.hpp>
+-#include <fsatutils/log/log.hpp>
+ 
+ namespace sensor {
+ 
+diff --git a/src/main.cpp b/src/main.cpp
+old mode 100755
+new mode 100644
+diff --git a/src/meson.build b/src/meson.build
+index 21c0333..989cd08 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -1,5 +1,6 @@
+ rs_srcs = files(
+   'db.cpp',
++  'htu21.cpp',
+   'ina219.cpp',
+   'main.cpp',
+   'sensor-manager.cpp',
+diff --git a/src/sensor-manager.cpp b/src/sensor-manager.cpp
+old mode 100755
+new mode 100644
+index a8462b8..6e721d3
+--- a/src/sensor-manager.cpp
++++ b/src/sensor-manager.cpp
+@@ -263,6 +263,9 @@ SensorManager::SensorManager(ManagerCLI& cli) : db_{cli.dbPath} {
+   registerDevice("h2-27_28", "ina219");
+   registerDevice("ambient-temp", "tmp112");
+   registerDevice("ltc2983", "ltc2983");
++  // -- Additional sensors --
++  registerDevice("htu21", "htu21");
++  // --
+ 
+   /* Track XADC Channels */
+   startTracking("xadc", "temp0");
+@@ -285,6 +288,9 @@ SensorManager::SensorManager(ManagerCLI& cli) : db_{cli.dbPath} {
+   startTracking("ltc2983", "temp0");
+   startTracking("ltc2983", "temp1");
+   startTracking("ltc2983", "temp2");
++  // -- Additional sensors --
++  startTracking("htu21", "htu21");
++  // --
+ }
+ 
+ void SensorManager::runManager(void) {
+diff --git a/src/tmp112.cpp b/src/tmp112.cpp
+index be5c34d..0ce2254 100644
+--- a/src/tmp112.cpp
++++ b/src/tmp112.cpp
+@@ -2,12 +2,12 @@
+ 
+ #include <iio.h>
+ 
++#include <fsatutils/log/log.hpp>
+ #include <memory>
+ #include <read-sensors/sensor.hpp>
+ #include <read-sensors/tmp112.hpp>
+ #include <stdexcept>
+ #include <string>
+-#include <fsatutils/log/log.hpp>
+ 
+ namespace sensor {
+ 
