@@ -6,4 +6,5 @@ require recipes-core/images/flatsat-image-minimal-dev.bb
 IMAGE_INSTALL:append = " \
                         rad-tests-overlays \
                         dac-test \
+                        rad-tests-app \
                         "
