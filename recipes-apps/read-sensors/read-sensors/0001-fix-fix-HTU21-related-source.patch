@@ -1,0 +1,25 @@
+From 6cc11d3164a1b57091ea02c2faf850a43aa7e576 Mon Sep 17 00:00:00 2001
+From: joaoclaudioeb <joaoclaudiobarcellos@gmail.com>
+Date: Thu, 28 May 2026 19:57:11 +0000
+Subject: [PATCH] fix: fix HTU21-related source
+
+---
+ src/htu21.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/htu21.cpp b/src/htu21.cpp
+index 88d7174..b2b1db9 100644
+--- a/src/htu21.cpp
++++ b/src/htu21.cpp
+@@ -15,9 +15,9 @@ Htu21::Htu21(std::shared_ptr<fsatutils::iio::Context> ctx, std::string name) {
+   channel_based_ = false;
+ 
+   dev_ = std::make_unique<fsatutils::iio::Device>(ctx, name);
+-  hum_ = std::make_unique<fsatutils::iio::Channel>("humidityrelative0", *dev_,
++  hum_ = std::make_unique<fsatutils::iio::Channel>("humidityrelative", *dev_,
+                                                    false);
+-  temp_ = std::make_unique<fsatutils::iio::Channel>("temp0", *dev_, false);
++  temp_ = std::make_unique<fsatutils::iio::Channel>("temp", *dev_, false);
+ }
+ 
+ std::optional<std::vector<SensorDataEntry>> Htu21::read() {

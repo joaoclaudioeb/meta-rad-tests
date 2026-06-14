@@ -105,12 +105,7 @@ struct dac81408 {
 
 typedef struct dac81408 dac81408_t;
 
-void dac81408_init(dac81408_t *dev,
-                   const char *spidev_path,
-                   const char *gpiochip_name,
-                   uint8_t rst_pin,
-                   uint8_t ldac_pin);
-
+void dac81408_init(dac81408_t *dev, const char *spidev_path, const char *gpiochip_name, uint8_t rst_pin, uint8_t ldac_pin);
 int dac81408_config(dac81408_t *dev);
 void dac81408_write_register(dac81408_t *dev, uint8_t reg, uint16_t wdata);
 uint16_t dac81408_read_register(dac81408_t *dev, uint8_t reg);

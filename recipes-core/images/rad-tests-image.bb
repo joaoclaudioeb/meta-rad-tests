@@ -8,4 +8,4 @@ IMAGE_INSTALL:append = " \
                         rad-tests-overlays \
                         dac-test \
                         rad-tests-app \
-                        "
+                        ads1256 \"

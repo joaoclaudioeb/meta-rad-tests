@@ -1,3 +1,10 @@
+# BitBake for the dac-test app.
+#
+# BitBake "template" for "external" userspace applications.
+#
+# Refs.:
+# https://docs.yoctoproject.org/bitbake/2.18/index.html
+
 SUMMARY = "Radiation Tests application"
 SECTION = "apps"
 LICENSE = "GPL-2.0"

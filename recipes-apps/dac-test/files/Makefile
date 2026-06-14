@@ -1,6 +1,13 @@
+# Makefile for the dac-test app.
+#
+# Makefile "template" for userspace applications.
+#
+# Refs.:
+# https://docs.yoctoproject.org/sdk-manual/working-projects.html#makefile-based-projects
+
 APP = dac-test
 
-SRC = \
+SRC = 	\
 	src/main.c \
 	src/device-drivers/dac81408.c \
 	src/drivers/gpio_linux.c \
