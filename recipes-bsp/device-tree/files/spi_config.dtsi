@@ -1,0 +1,4 @@
+&spi0 {
+	is-decoded-cs = <1>;
+	num-cs = <8>;
+};
