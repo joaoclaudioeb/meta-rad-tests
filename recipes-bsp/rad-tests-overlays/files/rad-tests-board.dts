@@ -2,7 +2,7 @@
 /plugin/;
 
 &spi0 {
-    num-cs = <4>;
+    status = "okay";
     is-decoded-cs = <1>;
         
     /* DAC81408 */
@@ -42,19 +42,19 @@
         status = "okay";
     };
     /* ADS1256 #3 (current) */
-  /*   ads1256@3 { */
-  /*       compatible = "ti,ads1256"; */
-  /*       reg = <3>; */
-  /*       spi-max-frequency = <1920000>; */
-  /*       ti,vref-mv = <2500>; */
-  /*       ti,status = <0x06>; */
-  /*       ti,pga = <0x06>;     /\* PGA = 64 *\/ */
-  /*       ti,drate = <0x82>;   /\* DRATE = 100SPS *\/ */
-  /*       drdy-gpios = <&axi_gpio_ctrl 5 1>; /\* ctrl_pins[5] = DRDY4, JB9 *\/ */
-  /*       /\* RESET signal is actually the PDWN signal in the board*\/ */
-  /*       reset-gpios = <&axi_gpio_ctrl 6 1>; /\* ctrl_pins[6] = PDWN4, JB10 *\/ */
-  /*       status = "okay"; */
-  /* }; */
+    ads1256@3 {
+        compatible = "ti,ads1256";
+        reg = <3>;
+        spi-max-frequency = <1920000>;
+        ti,vref-mv = <2500>;
+        ti,status = <0x06>;
+        ti,pga = <0x06>;     /* PGA = 64 */
+        ti,drate = <0x82>;   /* DRATE = 100SPS */
+        drdy-gpios = <&axi_gpio_ctrl 5 1>; /* ctrl_pins[5] = DRDY4, JB9 */
+        /* RESET signal is actually the PDWN signal in the board*/
+        reset-gpios = <&axi_gpio_ctrl 6 1>; /* ctrl_pins[6] = PDWN4, JB10 */
+        status = "okay";
+  };
 };
 
 &axi_iic_0 {
