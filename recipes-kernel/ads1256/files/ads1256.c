@@ -286,17 +286,17 @@ static int ads1256_read(struct iio_dev *indio_dev)
         {
             .tx_buf = &priv->data[0],
             .len = 1,
-            .delay_usecs = 4,
+            /* .delay_usecs = 4, */
         },
         {
             .tx_buf = &priv->data[1],
             .len = 1,
-            .delay_usecs = 4,
+            /* .delay_usecs = 4, */
         },
         {
             .tx_buf = &priv->data[2],
             .len = 1,
-            .delay_usecs = 7, /* t6 delay (~6.5 us) */
+            /* .delay_usecs = 7, /\* t6 delay (~6.5 us) *\/ */
         },
         {
             .tx_buf = &priv->data[3],
@@ -432,7 +432,7 @@ static int ads1256_probe(struct spi_device *spi)
         return ret;
 
     /* Configure STATUS register */
-    ret = device_property_read_u32(&spi->dev, "ti,status", &priv->status_reg);
+    ret = device_property_read_u8(&spi->dev, "ti,status", &priv->status_reg);
     if (ret) {
         priv->status_reg = (ADS1256_BUFFER_ENABLED << 1) | (ADS1256_ACAL_ENABLED   << 2) | (ADS1256_BITORDER_MSB   << 3); /* STATUS (default): BUFEN=1, ACAL=1, ORDER=MSB */ 
         dev_dbg(&spi->dev, "ti,status not found, using default 0x%x\n", priv->status_reg);
@@ -442,7 +442,7 @@ static int ads1256_probe(struct spi_device *spi)
         return ret;
     
     /* Configure ADCON register */
-    ret = device_property_read_u32(&spi->dev, "ti,pga", &priv->adcon_reg);
+    ret = device_property_read_u8(&spi->dev, "ti,pga", &priv->adcon_reg);
     if (ret) {
         priv->adcon_reg = ADS1256_PGA_1; /* ADCON (default): PGA=1, CLKOUT=off, SDCS=off */
         dev_dbg(&spi->dev, "ti,pga not found, using default 0x%x\n", priv->adcon_reg);
@@ -452,7 +452,7 @@ static int ads1256_probe(struct spi_device *spi)
         return ret;
 
     /* Configure DRATE register */
-    ret = device_property_read_u32(&spi->dev, "ti,drate", &priv->drate_reg);
+    ret = device_property_read_u8(&spi->dev, "ti,drate", &priv->drate_reg);
     if (ret) {
         priv->drate_reg = ADS1256_DRATE_10SPS; /* DRATE (default): 10 SPS */
         dev_dbg(&spi->dev, "ti,drate not found, using default 10 SPS\n");

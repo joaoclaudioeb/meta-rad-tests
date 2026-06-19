@@ -5,10 +5,10 @@
 int main(void) {
     dac81408_t dev = {0};
 
-    dac81408_init(&dev, "/dev/spidev2.0", "gpiochip0", 0U, DAC81408_PIN_UNUSED);
+    dac81408_init(&dev, "/dev/spidev1.0", "gpiochip0", 0U, DAC81408_PIN_UNUSED);
 
     dac81408_config(&dev);
-
+   
     uint16_t dev_id = dac81408_read_register(&dev, DAC81408_REG_DEVICEID);
     printf("Device ID: 0x%x\n", dev_id);
 

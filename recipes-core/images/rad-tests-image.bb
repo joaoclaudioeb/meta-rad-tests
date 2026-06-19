@@ -3,9 +3,10 @@ LICENSE = "MIT"
 
 require recipes-core/images/flatsat-image-minimal-dev.bb
 
-IMAGE_INSTALL:append = " \
+IMAGE_INSTALL:append =  " \
                         rad-tests-bitstream \
                         rad-tests-overlays \
                         dac-test \
                         rad-tests-app \
-                        ads1256 \"
+                        ads1256 \
+                        "
