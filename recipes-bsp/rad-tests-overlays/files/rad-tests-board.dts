@@ -4,12 +4,14 @@
 &spi0 {
     status = "okay";
     is-decoded-cs = <1>;
+    num-cs        = <8>;
         
     /* DAC81408 */
     spi0_dev0: spidev@0 {
         compatible = "rohm,dh2228fv";
         reg = <0>;
-        spi-max-frequency = <1000000>;
+        spi-max-frequency = <400000>;
+        spi-cpha;
         status = "okay";
     };
 
@@ -17,42 +19,45 @@
     ads1256@1 {
         compatible = "ti,ads1256";
         reg = <1>;
-        spi-max-frequency = <1920000>;
+        spi-max-frequency = <400000>;
+        spi-cpha;
         ti,vref-mv = <2500>;
-        ti,status = <0x06>;
+        ti,status = <0x00>;
         ti,pga = <0x00>;     /* PGA = 1 */
         ti,drate = <0x82>;   /* DRATE = 100SPS */
-        drdy-gpios = <&axi_gpio_ctrl 2 1>; /* ctrl_pins[2] = DRDY2, JB2 */
+        drdy-gpios = <&axi_gpio_ctrl 2 0>; /* ctrl_pins[2] = DRDY2, JB2 */
         /* RESET signal is actually the PDWN signal in the board*/
-        reset-gpios = <&axi_gpio_ctrl 1 1>; /* ctrl_pins[1] = PDWN2, JB1 */
+        reset-gpios = <&axi_gpio_ctrl 1 0>; /* ctrl_pins[1] = PDWN2, JB1 */
         status = "okay";
     };
     /* ADS1256 #2 (current) */
     ads1256@2 {
         compatible = "ti,ads1256";
         reg = <2>;
-        spi-max-frequency = <1920000>;
+        spi-max-frequency = <400000>;
+        spi-cpha;
         ti,vref-mv = <2500>;
-        ti,status = <0x06>;
+        ti,status = <0x00>;
         ti,pga = <0x06>;     /* PGA = 64 */
         ti,drate = <0x82>;   /* DRATE = 100SPS */
-        drdy-gpios = <&axi_gpio_ctrl 3 1>; /* ctrl_pins[3] = DRDY3, JB7 */
+        drdy-gpios = <&axi_gpio_ctrl 3 0>; /* ctrl_pins[3] = DRDY3, JB7 */
         /* RESET signal is actually the PDWN signal in the board*/
-        reset-gpios = <&axi_gpio_ctrl 4 1>; /* ctrl_pins[4] = PDWN3, JB8 */
+        reset-gpios = <&axi_gpio_ctrl 4 0>; /* ctrl_pins[4] = PDWN3, JB8 */
         status = "okay";
     };
     /* ADS1256 #3 (current) */
     ads1256@3 {
         compatible = "ti,ads1256";
         reg = <3>;
-        spi-max-frequency = <1920000>;
+        spi-max-frequency = <400000>;
+        spi-cpha;
         ti,vref-mv = <2500>;
-        ti,status = <0x06>;
+        ti,status = <0x00>;
         ti,pga = <0x06>;     /* PGA = 64 */
         ti,drate = <0x82>;   /* DRATE = 100SPS */
-        drdy-gpios = <&axi_gpio_ctrl 5 1>; /* ctrl_pins[5] = DRDY4, JB9 */
+        drdy-gpios = <&axi_gpio_ctrl 5 0>; /* ctrl_pins[5] = DRDY4, JB9 */
         /* RESET signal is actually the PDWN signal in the board*/
-        reset-gpios = <&axi_gpio_ctrl 6 1>; /* ctrl_pins[6] = PDWN4, JB10 */
+        reset-gpios = <&axi_gpio_ctrl 6 0>; /* ctrl_pins[6] = PDWN4, JB10 */
         status = "okay";
   };
 };

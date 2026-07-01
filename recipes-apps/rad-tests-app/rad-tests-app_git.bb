@@ -18,7 +18,7 @@ PV = "1.2+git${SRCPV}"
 
 S = "${WORKDIR}/git"
 
-DEPENDS = "sqlite3 fsatutils"
+DEPENDS = "sqlite3 fsatutils libgpiod"
 
 inherit pkgconfig meson systemd
 

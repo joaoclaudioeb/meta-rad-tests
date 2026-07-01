@@ -37,10 +37,8 @@ int main(void) {
     dac81408_set_out(&dev, 3, 65000);
     dac81408_set_out(&dev, 5, 10000);
 
-    uint16_t i = 0; 
-    while(1) {
-        dac81408_set_out(&dev, 0, (4369*i)%65535);
-        i += (4369*i)%65535;
+    for(int i = 0; i < 16; i++) {
+        dac81408_set_out(&dev, 0, 4369*i);
         usleep(100000);
     }
     

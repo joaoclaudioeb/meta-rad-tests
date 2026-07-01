@@ -30,7 +30,8 @@
 
 /* Commands */
 #define ADS1256_CMD_NOP           0x00
-#define ADS1256_CMD_WAKEUP        0xFF
+
+#define ADS1256_CMD_WAKEUP        0x00
 #define ADS1256_CMD_RDATA         0x01
 #define ADS1256_CMD_RDATAC        0x03
 #define ADS1256_CMD_SDATAC        0x0F
@@ -61,6 +62,10 @@
 /* ADS1256 number of channels, considering single + diff. channels */
 #define ADS1256_MAX_CHANNELS      12
 
+/* Workaround, just for now  */
+#define ADS1256_DRDY_MAX_TRIES    600    
+#define ADS1256_CAL_MAX_TRIES     8000
+
 enum ads1256_bitorder {
     ADS1256_BITORDER_MSB          = 0,
     ADS1256_BITORDER_LSB          = 1
@@ -90,6 +95,31 @@ enum ads1256_mux {
     ADS1256_MUX_SING_5            = 0x5F,
     ADS1256_MUX_SING_6            = 0x6F,
     ADS1256_MUX_SING_7            = 0x7F,
+};
+
+/* ADS1256 mux. coding */
+enum ads1256_mux_p {
+    ADS1256_MUXP_AIN0             = 0x00,
+    ADS1256_MUXP_AIN1             = 0x10,
+    ADS1256_MUXP_AIN2             = 0x20,
+    ADS1256_MUXP_AIN3             = 0x30,
+    ADS1256_MUXP_AIN4             = 0x40,
+    ADS1256_MUXP_AIN5             = 0x50,
+    ADS1256_MUXP_AIN6             = 0x60,
+    ADS1256_MUXP_AIN7             = 0x70,
+    ADS1256_MUXP_AINCOM           = 0x80,
+};
+
+enum ads1256_mux_n {
+    ADS1256_MUXN_AIN0             = 0x00,
+    ADS1256_MUXN_AIN1             = 0x01,
+    ADS1256_MUXN_AIN2             = 0x02,
+    ADS1256_MUXN_AIN3             = 0x03,
+    ADS1256_MUXN_AIN4             = 0x04,
+    ADS1256_MUXN_AIN5             = 0x05,
+    ADS1256_MUXN_AIN6             = 0x06,
+    ADS1256_MUXN_AIN7             = 0x07,
+    ADS1256_MUXN_AINCOM           = 0x08,
 };
 
 /* ADS1256 channels */
@@ -145,7 +175,7 @@ struct ads1256_private {
     struct gpio_desc *reset_gpio;
     struct gpio_desc *sync_gpio;
     struct mutex lock;
-
+    
     /* Cached regs. values */
     u8 status_reg;
     u8 mux_reg;
@@ -203,52 +233,41 @@ static const struct iio_chan_spec ads1256_channels[] = {
     ADS1256_CHAN(ADS1256_CHANNEL_7),
 };
 
+/* WARNING: using IRQ would be preferable! This is just a test, because it is a simpler implementation*/
+static int ads1256_wait_drdy_tries(struct ads1256_private *priv, int tries)
+{
+    while (tries-- > 0) {
+        if (!gpiod_get_value(priv->drdy_gpio))
+            return 0;
+        usleep_range(100, 200);
+    }
+    dev_err(&priv->spi->dev, "failed to get DRDY: %d\n", -ETIMEDOUT);
+    return -ETIMEDOUT;
+}
+
 static int ads1256_wait_drdy(struct ads1256_private *priv)
 {
-    int timeout = 1000;
-
-    while (gpiod_get_value(priv->drdy_gpio)) {
-        if (--timeout == 0)
-            return -ETIMEDOUT;
-
-        udelay(10);
-    }
-
-    return 0;
+    return ads1256_wait_drdy_tries(priv, ADS1256_DRDY_MAX_TRIES);
 }
 
 static int ads1256_write_cmd(struct iio_dev *indio_dev, u8 cmd)
 {
     struct ads1256_private *priv = iio_priv(indio_dev);
     int ret;
-
-    ret = ads1256_wait_drdy(priv);
-    if (ret)
-        return ret;
+    
+    struct spi_transfer t = {
+        .tx_buf = &priv->data[0],
+        .len = 1,
+        .delay = {
+            .value = 4, /* t11 delay (datasheet) */
+            .unit = SPI_DELAY_UNIT_USECS,
+        },
+    };
 
     priv->data[0] = cmd;
-
-    ret = spi_write(priv->spi, &priv->data[0], 1);
+    ret = spi_sync_transfer(priv->spi, &t, 1);
     if (ret < 0)
         return ret;
-
-    udelay(7); /* t6 delay (~6.5 us) */
-
-    return 0;
-}
-
-static int ads1256_reset(struct iio_dev *indio_dev)
-{
-    struct ads1256_private *priv = iio_priv(indio_dev);
-
-    if (priv->reset_gpio) {
-        gpiod_set_value(priv->reset_gpio, 0);
-        mdelay(200);
-        gpiod_set_value(priv->reset_gpio, 1);
-        mdelay(200);
-    } else {
-        return ads1256_write_cmd(indio_dev, ADS1256_CMD_RESET);
-    }
 
     return 0;
 }
@@ -257,74 +276,178 @@ static int ads1256_write_reg(struct iio_dev *indio_dev, u8 reg, u8 data)
 {
     struct ads1256_private *priv = iio_priv(indio_dev);
     int ret;
-
-    ret = ads1256_wait_drdy(priv);
-    if (ret)
-        return ret;
-        
-    priv->data[0] = ADS1256_CMD_WREG | reg;
-    priv->data[1] = 0x0;
-    priv->data[2] = data;
-
-    ret = spi_write(priv->spi, &priv->data[0], 3);
-    if (ret < 0)
-        return ret;
-
-    udelay(7); /* t6 delay (~6.5 us) */
     
-    return 0;
-}
-
-static int ads1256_read(struct iio_dev *indio_dev)
-{
-    struct ads1256_private *priv = iio_priv(indio_dev);
-    int ret;
-    int32_t val;
-
-    /* Defines one SPI message composed of two transfers */
-    struct spi_transfer t[4] = {
+    struct spi_transfer t[3] = {
         {
             .tx_buf = &priv->data[0],
             .len = 1,
-            /* .delay_usecs = 4, */
         },
         {
             .tx_buf = &priv->data[1],
             .len = 1,
-            /* .delay_usecs = 4, */
         },
         {
             .tx_buf = &priv->data[2],
             .len = 1,
-            /* .delay_usecs = 7, /\* t6 delay (~6.5 us) *\/ */
-        },
-        {
-            .tx_buf = &priv->data[3],
-            .rx_buf = &priv->data[3],
-            .len = 3,
+            .delay = {
+                .value = 4, /* t11 delay (datasheet) */
+                .unit = SPI_DELAY_UNIT_USECS,
+            },
         },
     };
+
+    priv->data[0] = ADS1256_CMD_WREG | reg;
+    priv->data[1] = ADS1256_CMD_NOP;
+    priv->data[2] = data;
+    ret = spi_sync_transfer(priv->spi, t, 3);
+    if (ret < 0)
+        return ret;
+    
+    return 0;
+}
+
+static int ads1256_reset(struct iio_dev *indio_dev)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    if (priv->reset_gpio) {
+        gpiod_set_value(priv->reset_gpio, 0);
+        usleep_range(200000, 250000);
+        gpiod_set_value(priv->reset_gpio, 1);
+    }
+
+    ret = ads1256_write_cmd(indio_dev, ADS1256_CMD_RESET);
+    if (ret)
+        return ret;
 
     ret = ads1256_wait_drdy(priv);
     if (ret)
         return ret;
 
-    priv->data[0] = ADS1256_CMD_SYNC;
-    priv->data[1] = ADS1256_CMD_WAKEUP;
-    priv->data[2] = ADS1256_CMD_RDATA;
-    memset(&priv->data[3], ADS1256_CMD_NOP, 3);
+    return 0;
+}
+
+static int ads1256_calibrate(struct iio_dev *indio_dev)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    ret = ads1256_write_cmd(indio_dev, ADS1256_CMD_SELFCAL);
+    if (ret)
+        return ret;
+
+    ret = ads1256_wait_drdy_tries(priv, ADS1256_CAL_MAX_TRIES);
+    if (ret)
+        return ret;
+
+    return 0;
+}
+
+static int ads1256_set_channel(struct iio_dev *indio_dev, u8 mux_channel)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+
+    struct spi_transfer t[5] = {
+        {
+            .tx_buf = &priv->data[0],
+            .len = 1,
+        },
+        {
+            .tx_buf = &priv->data[1],
+            .len = 1,
+        },
+        {
+            .tx_buf = &priv->data[2],
+            .len = 1,
+            .delay = {
+                .value = 4, /* t11 delay (datasheet) */
+                .unit = SPI_DELAY_UNIT_USECS,
+            },
+        },
+        {
+            .tx_buf = &priv->data[3],
+            .len = 1,
+            .delay = {
+                .value = 4, /* t11 delay (datasheet) */
+                .unit = SPI_DELAY_UNIT_USECS
+            }
+        },
+        {
+            .tx_buf = &priv->data[4],
+            .len = 1,
+            .delay = {
+                .value = 4, /* t11 delay (datasheet) */
+                .unit = SPI_DELAY_UNIT_USECS
+            },
+        },
+    };
     
-    ret = spi_sync_transfer(priv->spi, t, ARRAY_SIZE(t));
+    priv->data[0] = ADS1256_CMD_WREG | ADS1256_REG_MUX;
+    priv->data[1] = ADS1256_CMD_NOP;
+    priv->data[2] = mux_channel;
+    priv->data[3] = ADS1256_CMD_SYNC;
+    priv->data[4] = ADS1256_CMD_WAKEUP;
+
+    ret = ads1256_wait_drdy(priv);
+    if (ret)
+        return ret;
+    
+    ret = spi_sync_transfer(priv->spi, t, 5);
     if (ret < 0)
         return ret;
 
-    val = ((int32_t)priv->data[3] << 16) |
-        ((int32_t)priv->data[4] << 8) |
-        (int32_t)priv->data[5];
+    return 0;
+}
+
+static int ads1256_read(struct iio_dev *indio_dev, int *result)
+{
+    struct ads1256_private *priv = iio_priv(indio_dev);
+    int ret;
+    int val;
+    
+    struct spi_transfer t[2] = {
+        {
+            .tx_buf = &priv->data[0],
+            .len = 1,
+            .delay = {
+                .value = 7, /* t6 delay (datasheet) */
+                .unit = SPI_DELAY_UNIT_USECS
+            },
+        },
+        {
+            .tx_buf = &priv->data[1],
+            .rx_buf = &priv->data[1],
+            .len = 3,
+        },
+    };
+
+    priv->data[0] = ADS1256_CMD_RDATA;
+    memset(&priv->data[1], ADS1256_CMD_NOP, 3);
+
+    ret = ads1256_wait_drdy(priv);
+    if (ret)
+        return ret;
+
+    ret = spi_sync_transfer(priv->spi, t, ARRAY_SIZE(t));
+    if (ret < 0)
+        return ret;
+    
+    dev_dbg(&priv->spi->dev, "RAW bytes = %02x %02x %02x\n", priv->data[3], priv->data[4], priv->data[5]);
+
+    val = ((int32_t)priv->data[1] << 16) |
+          ((int32_t)priv->data[2] << 8)  |
+          (int32_t)priv->data[3];
+    
     if (val & 0x800000)
         val |= 0xFF000000;
-               
-    return val;
+
+    *result = val;
+    
+    dev_dbg(&priv->spi->dev, "Converted = %d (0x%08x)\n", val, (u32)val);
+    
+    return 0;
 }
 
 static const u8 ads1256_mux_table[] = {
@@ -342,9 +465,22 @@ static const u8 ads1256_mux_table[] = {
     [ADS1256_CHANNEL_6_7] = ADS1256_MUX_DIFF_6_7,
 };
 
-static int ads1256_read_raw(struct iio_dev *indio_dev,
-			    struct iio_chan_spec const *chan,
-			    int *val, int *val2, long mask)
+static const u8 ads1256_mux_ch_table[] = {
+    [ADS1256_CHANNEL_0]   = ADS1256_MUXN_AIN0 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_1]   = ADS1256_MUXN_AIN1 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_2]   = ADS1256_MUXN_AIN2 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_3]   = ADS1256_MUXN_AIN3 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_4]   = ADS1256_MUXN_AIN4 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_5]   = ADS1256_MUXN_AIN5 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_6]   = ADS1256_MUXN_AIN6 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_7]   = ADS1256_MUXN_AIN7 | ADS1256_MUXN_AINCOM,
+    [ADS1256_CHANNEL_0_1] = ADS1256_MUXN_AIN0 | ADS1256_MUXN_AIN1,
+    [ADS1256_CHANNEL_2_3] = ADS1256_MUXN_AIN2 | ADS1256_MUXN_AIN3,
+    [ADS1256_CHANNEL_4_5] = ADS1256_MUXN_AIN4 | ADS1256_MUXN_AIN5,
+    [ADS1256_CHANNEL_6_7] = ADS1256_MUXN_AIN6 | ADS1256_MUXN_AIN7,
+};
+
+static int ads1256_read_raw(struct iio_dev *indio_dev, struct iio_chan_spec const *chan, int *val, int *val2, long mask)
 {
     struct ads1256_private *priv = iio_priv(indio_dev);
     int ret;
@@ -353,15 +489,17 @@ static int ads1256_read_raw(struct iio_dev *indio_dev,
     
     switch (mask) {
     case IIO_CHAN_INFO_RAW:
+        ret = ads1256_set_channel(indio_dev, ads1256_mux_ch_table[chan->scan_index]);
+        if (ret)
+            goto out;
+        
         ret = ads1256_write_reg(indio_dev, ADS1256_REG_MUX, ads1256_mux_table[chan->scan_index]);
         if (ret)
             goto out;
 
-        ret = ads1256_read(indio_dev);
+        ret = ads1256_read(indio_dev, val);
         if (ret < 0)
             goto out;
-
-        *val = ret;
 
         ret = IIO_VAL_INT;
         break;
@@ -388,6 +526,7 @@ static int ads1256_probe(struct spi_device *spi)
     struct iio_dev *indio_dev;
     struct ads1256_private *priv;
     int ret;
+    u32 tmp;
 
     /* Allocate iio_dev + private data */
     indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*priv));
@@ -399,15 +538,23 @@ static int ads1256_probe(struct spi_device *spi)
     spi_set_drvdata(spi, indio_dev);
     mutex_init(&priv->lock);
 
-    /* Request GPIOs */
+    spi->mode |= SPI_CPHA;
+    spi->bits_per_word = 8;
+    ret = spi_setup(spi);
+    if (ret)
+        return ret;
+    
+    /* Request DRDY GPIO */
     priv->drdy_gpio = devm_gpiod_get(&spi->dev, "drdy", GPIOD_IN);
     if (IS_ERR(priv->drdy_gpio))
         return PTR_ERR(priv->drdy_gpio);
 
+    /* Request RESET GPIO */
     priv->reset_gpio = devm_gpiod_get_optional(&spi->dev, "reset", GPIOD_OUT_HIGH);
     if (IS_ERR(priv->reset_gpio))
         return PTR_ERR(priv->reset_gpio);
 
+    /* Request SYNC GPIO */
     priv->sync_gpio = devm_gpiod_get_optional(&spi->dev, "sync", GPIOD_OUT_HIGH);
     if (IS_ERR(priv->sync_gpio))
         return PTR_ERR(priv->sync_gpio);
@@ -432,35 +579,48 @@ static int ads1256_probe(struct spi_device *spi)
         return ret;
 
     /* Configure STATUS register */
-    ret = device_property_read_u8(&spi->dev, "ti,status", &priv->status_reg);
+    ret = device_property_read_u32(&spi->dev, "ti,status", &tmp);
     if (ret) {
-        priv->status_reg = (ADS1256_BUFFER_ENABLED << 1) | (ADS1256_ACAL_ENABLED   << 2) | (ADS1256_BITORDER_MSB   << 3); /* STATUS (default): BUFEN=1, ACAL=1, ORDER=MSB */ 
+        priv->status_reg = (ADS1256_BUFFER_DISABLED << 1) | (ADS1256_ACAL_DISABLED   << 2) | (ADS1256_BITORDER_MSB   << 3); /* STATUS (default): BUFEN=0, ACAL=0, ORDER=MSB */ 
         dev_dbg(&spi->dev, "ti,status not found, using default 0x%x\n", priv->status_reg);
+    }
+    else {
+        priv->status_reg = tmp & 0xff;
     }
     ret = ads1256_write_reg(indio_dev, ADS1256_REG_STATUS, priv->status_reg);
     if (ret)
         return ret;
     
     /* Configure ADCON register */
-    ret = device_property_read_u8(&spi->dev, "ti,pga", &priv->adcon_reg);
+    ret = device_property_read_u32(&spi->dev, "ti,pga", &tmp);
     if (ret) {
         priv->adcon_reg = ADS1256_PGA_1; /* ADCON (default): PGA=1, CLKOUT=off, SDCS=off */
         dev_dbg(&spi->dev, "ti,pga not found, using default 0x%x\n", priv->adcon_reg);
+    }
+    else {
+        priv->adcon_reg = tmp & 0xff;
     }
     ret = ads1256_write_reg(indio_dev, ADS1256_REG_ADCON, priv->adcon_reg);
     if (ret)
         return ret;
 
     /* Configure DRATE register */
-    ret = device_property_read_u8(&spi->dev, "ti,drate", &priv->drate_reg);
+    ret = device_property_read_u32(&spi->dev, "ti,drate", &tmp);
     if (ret) {
         priv->drate_reg = ADS1256_DRATE_10SPS; /* DRATE (default): 10 SPS */
         dev_dbg(&spi->dev, "ti,drate not found, using default 10 SPS\n");
+    }
+    else {
+        priv->drate_reg = tmp & 0xff;
     }
     ret = ads1256_write_reg(indio_dev, ADS1256_REG_DRATE, priv->drate_reg);
     if (ret)
         return ret;
 
+    ret = ads1256_calibrate(indio_dev);
+    if (ret)
+        return ret;
+    
     /* Register device */
     return devm_iio_device_register(&spi->dev, indio_dev);
 }
@@ -490,8 +650,6 @@ module_spi_driver(ads1256_driver);
 /**
  * TODO:
  * Replace busy-wait in ads1256_wait_drdy() with IRQ-based DRDY handling
- * Replace delay_usecs with delay.value + delay.unit in spi_transfer structs
- * Replace mdelay() with msleep() in ads1256_reset()
  * Emit SYNC+WAKEUP only after MUX change, not before every RDATA
  * Add IIO triggered buffer support
  * Consider mainline submission after above items are addressed
