@@ -25,3 +25,6 @@ $(APP): $(OBJ)
 
 clean:
 	rm -f $(APP) $(OBJ)
+
+format:
+	@find src include -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' | xargs clang-format -i

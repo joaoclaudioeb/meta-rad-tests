@@ -18,3 +18,6 @@ modules_install:
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) clean
+
+format:
+	@clang-format -i ads1256.c

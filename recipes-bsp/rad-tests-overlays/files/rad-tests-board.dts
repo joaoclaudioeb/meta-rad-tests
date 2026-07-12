@@ -10,7 +10,7 @@
     spi0_dev0: spidev@0 {
         compatible = "rohm,dh2228fv";
         reg = <0>;
-        spi-max-frequency = <400000>;
+        spi-max-frequency = <1000000>;
         spi-cpha;
         status = "okay";
     };
@@ -19,12 +19,12 @@
     ads1256@1 {
         compatible = "ti,ads1256";
         reg = <1>;
-        spi-max-frequency = <400000>;
+        spi-max-frequency = <1000000>;
         spi-cpha;
         ti,vref-mv = <2500>;
         ti,status = <0x00>;
         ti,pga = <0x00>;     /* PGA = 1 */
-        ti,drate = <0x82>;   /* DRATE = 100SPS */
+        ti,drate = <0xA1>;   /* DRATE = 100SPS */
         drdy-gpios = <&axi_gpio_ctrl 2 0>; /* ctrl_pins[2] = DRDY2, JB2 */
         /* RESET signal is actually the PDWN signal in the board*/
         reset-gpios = <&axi_gpio_ctrl 1 0>; /* ctrl_pins[1] = PDWN2, JB1 */
@@ -34,7 +34,7 @@
     ads1256@2 {
         compatible = "ti,ads1256";
         reg = <2>;
-        spi-max-frequency = <400000>;
+        spi-max-frequency = <1000000>;
         spi-cpha;
         ti,vref-mv = <2500>;
         ti,status = <0x00>;
@@ -49,7 +49,7 @@
     ads1256@3 {
         compatible = "ti,ads1256";
         reg = <3>;
-        spi-max-frequency = <400000>;
+        spi-max-frequency = <1000000>;
         spi-cpha;
         ti,vref-mv = <2500>;
         ti,status = <0x00>;

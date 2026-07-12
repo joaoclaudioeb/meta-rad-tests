@@ -10,19 +10,17 @@
 #ifndef GPIO_LINUX_H_
 #define GPIO_LINUX_H_
 
-#include <stdint.h>
 #include <gpiod.h>
+#include <stdint.h>
 
 struct gpio {
-    struct gpiod_chip *chip;
-    struct gpiod_line *line;
+  struct gpiod_chip* chip;
+  struct gpiod_line* line;
 };
 
-int gpio_init(struct gpio *g,
-              const char *chip_name,
-              uint8_t pin,
+int gpio_init(struct gpio* g, const char* chip_name, uint8_t pin,
               int default_value);
 
-int gpio_set(struct gpio *g, int value);
+int gpio_set(struct gpio* g, int value);
 
 #endif /* GPIO_LINUX_H_ */

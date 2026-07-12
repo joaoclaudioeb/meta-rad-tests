@@ -12,7 +12,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=b234ee4d69f5fce4486a80fdaf4a4263"
 
 SRCREV = "${AUTOREV}"
 
-SRC_URI = "git://github.com/joaoclaudioeb/meta-rad-tests-app.git;branch=master;protocol=https"
+SRC_URI = "git://github.com/joaoclaudioeb/meta-rad-tests-app.git;branch=feat/add-ads1256-measurements;protocol=https"
 
 PV = "1.2+git${SRCPV}"
 
